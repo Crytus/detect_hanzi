@@ -94,9 +94,18 @@ class TestFileIO(unittest.TestCase):
     def test_parse_input_paths(self):
         # ドラッグ＆ドロップ形式（引用符付き・複数）の入力を分解できる
         self.assertEqual(
-            dh.parse_input_paths(r'"C:\my docs\a.txt" C:\b.txt  "D:\日本語 フォルダ"'),
+            dh.parse_input_paths(r'"C:\my docs\a.txt" C:\b.txt  "D:\日本語 フォルダ"', windows=True),
             [r"C:\my docs\a.txt", r"C:\b.txt", r"D:\日本語 フォルダ"])
-        self.assertEqual(dh.parse_input_paths("   "), [])
+        self.assertEqual(dh.parse_input_paths("   ", windows=True), [])
+
+    def test_parse_input_paths_mac(self):
+        # Mac のターミナルへのドロップ形式（\ で空白をエスケープ、末尾に空白）
+        self.assertEqual(
+            dh.parse_input_paths(r"/Users/me/My\ Docs/a.txt /Users/me/日本語\ フォルダ ", windows=False),
+            ["/Users/me/My Docs/a.txt", "/Users/me/日本語 フォルダ"])
+        # 引用符付きや、閉じ忘れの場合
+        self.assertEqual(dh.parse_input_paths("'/tmp/a b.txt'", windows=False), ["/tmp/a b.txt"])
+        self.assertEqual(dh.parse_input_paths('"/tmp/a', windows=False), ['"/tmp/a'])
 
     def test_interactive(self):
         sub = self.dir / "スペース あり"

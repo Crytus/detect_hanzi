@@ -16,7 +16,9 @@
 from __future__ import annotations
 
 import argparse
+import os
 import re
+import shlex
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -168,12 +170,21 @@ def build_parser() -> argparse.ArgumentParser:
     return p
 
 
-def parse_input_paths(line: str) -> list[str]:
+def parse_input_paths(line: str, windows: bool | None = None) -> list[str]:
     """入力された文字列からパスを取り出す。
 
-    ドラッグ＆ドロップで入力された "..." で囲まれたパスや、
-    空白区切りの複数パスに対応する。
+    Windows: ドラッグ＆ドロップで入力される "..." で囲まれたパスと、
+             空白区切りの複数パスに対応する（\ はパス区切りとして扱う）。
+    Mac/Linux: シェルと同じ規則で分解する。ターミナルへのドロップで入力される
+             「My\ Docs」のような \ でエスケープされた空白や、'...' に対応する。
     """
+    if windows is None:
+        windows = os.name == "nt"
+    if not windows:
+        try:
+            return shlex.split(line)
+        except ValueError:
+            pass  # 引用符の閉じ忘れなどは下の簡易分解で処理する
     return [m.group(1) or m.group(2) for m in re.finditer(r'"([^"]+)"|(\S+)', line)]
 
 

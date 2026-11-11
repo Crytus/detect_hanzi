@@ -4,6 +4,7 @@ import io
 import sys
 import tempfile
 import unittest
+import unittest.mock
 from contextlib import redirect_stdout
 from pathlib import Path
 
@@ -89,6 +90,32 @@ class TestFileIO(unittest.TestCase):
         self.assertEqual(code, 0)
         code, _ = self.run_main(str(self.dir), "--ext", "")
         self.assertEqual(code, 1)
+
+    def test_parse_input_paths(self):
+        # ドラッグ＆ドロップ形式（引用符付き・複数）の入力を分解できる
+        self.assertEqual(
+            dh.parse_input_paths(r'"C:\my docs\a.txt" C:\b.txt  "D:\日本語 フォルダ"'),
+            [r"C:\my docs\a.txt", r"C:\b.txt", r"D:\日本語 フォルダ"])
+        self.assertEqual(dh.parse_input_paths("   "), [])
+
+    def test_interactive(self):
+        sub = self.dir / "スペース あり"
+        sub.mkdir()
+        (sub / "e.txt").write_text("这是测试", encoding="utf-8")
+        (self.dir / "f.txt").write_text("说", encoding="utf-8")
+        # 1回目: 引数のファイル、2回目: 入力したフォルダ、3回目: 空行で終了
+        inputs = iter([f'"{sub}"', ""])
+        with unittest.mock.patch("builtins.input", lambda prompt="": next(inputs)):
+            code, out = self.run_main("-i", str(self.dir / "f.txt"))
+        self.assertEqual(code, 0)  # 対話モードは常に0
+        self.assertIn("'说'", out)
+        self.assertIn("'这'", out)
+        self.assertEqual(out.count("--- 検出数"), 2)
+
+    def test_no_target_is_error(self):
+        with self.assertRaises(SystemExit):
+            with redirect_stdout(io.StringIO()), unittest.mock.patch("sys.stderr", io.StringIO()):
+                dh.main([])
 
     def test_context(self):
         (self.dir / "d.txt").write_text("この説明は简单です", encoding="utf-8")

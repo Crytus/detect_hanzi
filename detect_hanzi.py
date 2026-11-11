@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -149,7 +150,7 @@ def format_hit(hit: Hit, show_context: bool, context_width: int = 10) -> str:
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         description="日本語テキストに混入した中国語の漢字（簡体字など）を検出します。")
-    p.add_argument("targets", nargs="+", help="検査するファイルまたはフォルダ")
+    p.add_argument("targets", nargs="*", help="検査するファイルまたはフォルダ")
     p.add_argument("--level", choices=LEVEL_ENCODINGS.keys(), default="cp932",
                    help="判定に使う文字集合（既定: cp932）。jis2004 は第3・第4水準漢字を許容")
     p.add_argument("--encoding", default="auto",
@@ -162,27 +163,31 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("-c", "--context", action="store_true", help="前後の文脈も表示する")
     p.add_argument("-s", "--summary-only", action="store_true",
                    help="個別の位置を出さず、文字ごとの集計のみ表示する")
+    p.add_argument("-i", "--interactive", action="store_true",
+                   help="対話モード。検査するファイルの入力を繰り返し受け付ける")
     return p
 
 
-def main(argv: list[str] | None = None) -> int:
-    args = build_parser().parse_args(argv)
+def parse_input_paths(line: str) -> list[str]:
+    """入力された文字列からパスを取り出す。
 
-    # Windowsコンソールでも文字化けしないよう標準出力をUTF-8に
-    for stream in (sys.stdout, sys.stderr):
-        if hasattr(stream, "reconfigure"):
-            stream.reconfigure(encoding="utf-8", errors="replace")
+    ドラッグ＆ドロップで入力された "..." で囲まれたパスや、
+    空白区切りの複数パスに対応する。
+    """
+    return [m.group(1) or m.group(2) for m in re.finditer(r'"([^"]+)"|(\S+)', line)]
 
+
+def scan_targets(targets: Iterable[str], args: argparse.Namespace, detector: Detector) -> int:
+    """指定されたファイル/フォルダを検査して結果を表示し、終了コードを返す。"""
     extensions = tuple(e.strip().lower() if e.strip().startswith(".") else "." + e.strip().lower()
                        for e in args.ext.split(",") if e.strip())
-    detector = Detector(args.level, args.extra, args.allow)
 
     counts: dict[str, int] = {}
     total = 0
     files_with_hits = 0
     error = False
 
-    for path in iter_files(args.targets, extensions):
+    for path in iter_files(targets, extensions):
         try:
             text = read_text(path, args.encoding)
         except (UnicodeDecodeError, LookupError, OSError) as e:
@@ -208,6 +213,46 @@ def main(argv: list[str] | None = None) -> int:
     if error:
         return 2
     return 1 if total else 0
+
+
+def interactive_loop(args: argparse.Namespace, detector: Detector) -> int:
+    """対話モード: 空行（または入力終了）までパスの入力と検査を繰り返す。"""
+    while True:
+        print()
+        print("調べたいファイルまたはフォルダを、この画面にドラッグ＆ドロップして Enter キーを押してください。")
+        print("（何も入力せずに Enter キーを押すと終了します）")
+        try:
+            line = input("> ")
+        except (EOFError, KeyboardInterrupt):
+            print()
+            return 0
+        paths = parse_input_paths(line)
+        if not paths:
+            return 0
+        print()
+        scan_targets(paths, args, detector)
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = build_parser()
+    args = parser.parse_args(argv)
+
+    # Windowsコンソールでも文字化けしないよう標準出力をUTF-8に
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="replace")
+
+    detector = Detector(args.level, args.extra, args.allow)
+
+    if args.interactive:
+        # 対話モード: 引数があれば先に検査してから入力待ちへ移る。終了コードは常に0
+        if args.targets:
+            scan_targets(args.targets, args, detector)
+        return interactive_loop(args, detector)
+    if args.targets:
+        return scan_targets(args.targets, args, detector)
+    parser.error("検査するファイルまたはフォルダを指定してください（または -i で対話モード）")
+    return 2  # parser.error は終了するため到達しない
 
 
 if __name__ == "__main__":

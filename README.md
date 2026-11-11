@@ -150,3 +150,8 @@ samples\sample.txt:3:7   '气' (U+6C14)  …今日は良い天【气】ですね
 ```
 python -m unittest discover -s tests -v
 ```
+
+## ライセンス
+
+[MIT License](LICENSE) で公開しています。著作権表示とライセンス文を残せば、商用利用・改変・再配布を自由に行えます。
+本ソフトウェアは無保証です。
